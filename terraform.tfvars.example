@@ -1,0 +1,5 @@
+project_id     = "crested-booking-488922-f7"
+region         = "us-central1"
+db_password    = "CHANGE_ME"
+session_secret = "CHANGE_ME"
+smtp_pass      = "CHANGE_ME"

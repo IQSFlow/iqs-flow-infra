@@ -1,0 +1,12 @@
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!terraform.tfvars.example
+# .terraform.lock.hcl — keep in git for reproducibility
+crash.log
+*.tfplan
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
