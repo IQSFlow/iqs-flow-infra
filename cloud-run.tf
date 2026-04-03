@@ -10,6 +10,11 @@ resource "google_cloud_run_v2_service" "api" {
       max_instance_count = 3
     }
 
+    vpc_access {
+      connector = google_vpc_access_connector.connector.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
+
     volumes {
       name = "cloudsql"
       cloud_sql_instance {
@@ -65,18 +70,35 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
+<<<<<<< HEAD
         name = "AERODATABOX_API_KEY"
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.aerodatabox_key.secret_id
+=======
+        name = "DATABASE_READ_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.db_read_url.secret_id
+>>>>>>> claude/v5-infra-hardening
             version = "latest"
           }
         }
       }
 
       env {
+<<<<<<< HEAD
         name  = "GCS_BUCKET"
         value = google_storage_bucket.uploads.name
+=======
+        name  = "REDIS_HOST"
+        value = google_redis_instance.cache.host
+      }
+
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.cache.port)
+>>>>>>> claude/v5-infra-hardening
       }
 
       resources {
@@ -120,6 +142,11 @@ resource "google_cloud_run_v2_service" "web" {
     scaling {
       min_instance_count = 1
       max_instance_count = 3
+    }
+
+    vpc_access {
+      connector = google_vpc_access_connector.connector.id
+      egress    = "PRIVATE_RANGES_ONLY"
     }
 
     containers {

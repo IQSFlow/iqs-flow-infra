@@ -29,3 +29,23 @@ resource "google_cloud_scheduler_job" "weekly_report" {
     }
   }
 }
+
+resource "google_cloud_scheduler_job" "daily_cleanup" {
+  name             = "iqs-flow-daily-cleanup"
+  description      = "Runs daily cleanup of old location events, audit logs, sessions, and notifications"
+  schedule         = "0 3 * * *"
+  time_zone        = "America/New_York"
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${google_cloud_run_v2_service.api.uri}/api/cron/cleanup"
+    oidc_token {
+      service_account_email = google_service_account.api.email
+    }
+  }
+
+  retry_config {
+    retry_count = 3
+  }
+}

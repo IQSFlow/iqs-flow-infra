@@ -23,6 +23,11 @@ locals {
     "gmail.googleapis.com",
     "maps-backend.googleapis.com",
     "clouderrorreporting.googleapis.com",
+
+    # Infra hardening APIs
+    "redis.googleapis.com",
+    "vpcaccess.googleapis.com",
+    "pubsub.googleapis.com",
   ]
 }
 
