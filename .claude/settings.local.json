@@ -15,7 +15,15 @@
       "Write",
       "Edit",
       "Glob",
-      "Grep"
+      "Grep",
+      "Bash(export PATH=\"/c/Users/joshu/bin:$PATH\")",
+      "Bash(terraform plan:*)",
+      "Bash(terraform apply:*)",
+      "Bash(gcloud builds:*)",
+      "Bash(gcloud iam:*)",
+      "Bash(gcloud services:*)",
+      "Bash(mv c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/apply-new-resources.md c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/apply-new-resources.done.md)",
+      "Bash(mv c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.md c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.done.md)"
     ]
   }
 }
