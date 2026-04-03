@@ -26,7 +26,6 @@ resource "google_secret_manager_secret" "smtp_pass" {
   }
 }
 
-<<<<<<< HEAD
 resource "google_secret_manager_secret" "google_maps_key" {
   secret_id = "google-maps-api-key"
   replication {
@@ -36,10 +35,13 @@ resource "google_secret_manager_secret" "google_maps_key" {
 
 resource "google_secret_manager_secret" "aerodatabox_key" {
   secret_id = "aerodatabox-api-key"
-=======
+  replication {
+    auto {}
+  }
+}
+
 resource "google_secret_manager_secret" "db_read_url" {
   secret_id = "iqs-flow-db-read-url"
->>>>>>> claude/v5-infra-hardening
   replication {
     auto {}
   }

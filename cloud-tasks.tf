@@ -8,9 +8,9 @@ resource "google_cloud_tasks_queue" "email" {
   }
 
   retry_config {
-    max_attempts = 5
-    min_backoff  = "10s"
-    max_backoff  = "300s"
+    max_attempts  = 5
+    min_backoff   = "10s"
+    max_backoff   = "300s"
     max_doublings = 3
   }
 }
