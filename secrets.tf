@@ -26,5 +26,12 @@ resource "google_secret_manager_secret" "smtp_pass" {
   }
 }
 
+resource "google_secret_manager_secret" "db_read_url" {
+  secret_id = "iqs-flow-db-read-url"
+  replication {
+    auto {}
+  }
+}
+
 # Secret values are managed via gcloud CLI (not stored in Terraform state)
 # Use: echo -n "value" | gcloud secrets versions add SECRET_NAME --data-file=-

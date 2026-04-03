@@ -23,6 +23,31 @@ resource "google_sql_database_instance" "main" {
   deletion_protection = true
 }
 
+resource "google_sql_database_instance" "read_replica" {
+  name                 = "iqs-flow-db-replica"
+  master_instance_name = google_sql_database_instance.main.name
+  region               = var.region
+  database_version     = "POSTGRES_15"
+
+  replica_configuration {
+    failover_target = false
+  }
+
+  settings {
+    tier              = "db-f1-micro"
+    availability_type = "ZONAL"
+
+    # Match the ip_configuration from the main instance (public IP, no VPC)
+    ip_configuration {
+      ipv4_enabled = true
+    }
+  }
+
+  deletion_protection = false
+
+  depends_on = [google_sql_database_instance.main]
+}
+
 resource "google_sql_database" "iqsflow" {
   name     = "iqsflow"
   instance = google_sql_database_instance.main.name
