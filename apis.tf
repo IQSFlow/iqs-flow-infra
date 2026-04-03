@@ -25,8 +25,6 @@ locals {
     "clouderrorreporting.googleapis.com",
 
     # Infra hardening APIs
-    "redis.googleapis.com",
-    "vpcaccess.googleapis.com",
     "pubsub.googleapis.com",
   ]
 }
