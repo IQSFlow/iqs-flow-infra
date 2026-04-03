@@ -64,6 +64,21 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      env {
+        name = "AERODATABOX_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.aerodatabox_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name  = "GCS_BUCKET"
+        value = google_storage_bucket.uploads.name
+      }
+
       resources {
         limits = {
           cpu    = "1"
