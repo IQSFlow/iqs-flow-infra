@@ -40,5 +40,12 @@ resource "google_secret_manager_secret" "aerodatabox_key" {
   }
 }
 
+resource "google_secret_manager_secret" "smtp_user" {
+  secret_id = "iqs-flow-smtp-user"
+  replication {
+    auto {}
+  }
+}
+
 # Secret values are managed via gcloud CLI (not stored in Terraform state)
 # Use: echo -n "value" | gcloud secrets versions add SECRET_NAME --data-file=-

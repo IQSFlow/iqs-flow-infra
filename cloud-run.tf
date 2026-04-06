@@ -18,6 +18,8 @@ resource "google_cloud_run_v2_service" "api" {
     }
 
     containers {
+      # Image tag is managed by Cloud Build triggers, not Terraform.
+      # lifecycle.ignore_changes prevents Terraform from reverting deployments.
       image = "${var.region}-docker.pkg.dev/${var.project_id}/iqs-flow/iqs-flow-api:latest"
 
       ports {
@@ -30,8 +32,13 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name  = "SMTP_USER"
-        value = "info@iqsflow.com"
+        name = "SMTP_USER"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.smtp_user.secret_id
+            version = "latest"
+          }
+        }
       }
 
       env {
@@ -123,6 +130,8 @@ resource "google_cloud_run_v2_service" "web" {
     }
 
     containers {
+      # Image tag is managed by Cloud Build triggers, not Terraform.
+      # lifecycle.ignore_changes prevents Terraform from reverting deployments.
       image = "${var.region}-docker.pkg.dev/${var.project_id}/iqs-flow/iqs-flow-web:latest"
 
       ports {

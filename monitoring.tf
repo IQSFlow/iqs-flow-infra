@@ -1,3 +1,12 @@
+resource "google_monitoring_notification_channel" "email" {
+  display_name = "IQS Flow Admin Email"
+  type         = "email"
+
+  labels = {
+    email_address = "jhinton@iqsflow.com"
+  }
+}
+
 resource "google_monitoring_alert_policy" "api_errors" {
   display_name = "IQS Flow API - High Error Rate"
   combiner     = "OR"
@@ -18,7 +27,7 @@ resource "google_monitoring_alert_policy" "api_errors" {
     }
   }
 
-  notification_channels = []
+  notification_channels = [google_monitoring_notification_channel.email.name]
 
   alert_strategy {
     auto_close = "1800s"
@@ -45,7 +54,7 @@ resource "google_monitoring_alert_policy" "db_connections" {
     }
   }
 
-  notification_channels = []
+  notification_channels = [google_monitoring_notification_channel.email.name]
 }
 
 # --- Uptime Checks ---
@@ -114,7 +123,7 @@ resource "google_monitoring_alert_policy" "api_downtime" {
     }
   }
 
-  notification_channels = []
+  notification_channels = [google_monitoring_notification_channel.email.name]
 
   alert_strategy {
     auto_close = "1800s"
@@ -143,7 +152,7 @@ resource "google_monitoring_alert_policy" "api_high_error_rate" {
     }
   }
 
-  notification_channels = []
+  notification_channels = [google_monitoring_notification_channel.email.name]
 
   alert_strategy {
     auto_close = "3600s"
