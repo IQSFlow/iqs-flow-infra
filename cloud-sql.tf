@@ -10,7 +10,7 @@ resource "google_sql_database_instance" "main" {
     disk_type         = "PD_SSD"
 
     ip_configuration {
-      ipv4_enabled = false
+      ipv4_enabled = true  # Cannot disable without Private IP/PSC; SSL enforced instead
       ssl_mode     = "ENCRYPTED_ONLY"
     }
 
