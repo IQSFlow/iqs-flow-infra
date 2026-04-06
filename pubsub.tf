@@ -16,6 +16,14 @@ resource "google_pubsub_topic" "work_order_updated" {
   name = "work-order-updated"
 }
 
+resource "google_pubsub_topic" "ticket_created" {
+  name = "ticket-created"
+}
+
+resource "google_pubsub_topic" "alert_triggered" {
+  name = "alert-triggered"
+}
+
 resource "google_pubsub_topic" "dead_letter" {
   name = "dead-letter"
 }

@@ -212,6 +212,55 @@ resource "google_cloud_run_v2_service_iam_member" "marketing_public" {
   member   = "allUsers"
 }
 
+# --- Migration Job ---
+
+resource "google_cloud_run_v2_job" "migrations" {
+  name     = "run-migrations"
+  location = var.region
+
+  template {
+    template {
+      service_account = google_service_account.api.email
+      timeout         = "120s"
+      max_retries     = 0
+
+      volumes {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [google_sql_database_instance.main.connection_name]
+        }
+      }
+
+      containers {
+        image   = "${var.region}-docker.pkg.dev/${var.project_id}/iqs-flow/iqs-flow-api:latest"
+        command = ["npx"]
+        args    = ["prisma", "migrate", "deploy"]
+
+        env {
+          name = "DATABASE_URL"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.db_url.secret_id
+              version = "latest"
+            }
+          }
+        }
+
+        volume_mounts {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+    ]
+  }
+}
+
 # Public access
 resource "google_cloud_run_v2_service_iam_member" "web_public" {
   project  = var.project_id

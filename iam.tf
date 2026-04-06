@@ -38,6 +38,18 @@ resource "google_project_iam_member" "api_secrets" {
   member  = "serviceAccount:${google_service_account.api.email}"
 }
 
+resource "google_project_iam_member" "api_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
+resource "google_project_iam_member" "api_translate" {
+  project = var.project_id
+  role    = "roles/cloudtranslate.user"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
 # --- Web SA Roles ---
 
 resource "google_project_iam_member" "web_secrets" {
