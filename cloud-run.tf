@@ -169,6 +169,49 @@ resource "google_cloud_run_v2_service" "web" {
   }
 }
 
+# Marketing website (iqsflow.com)
+resource "google_cloud_run_v2_service" "marketing" {
+  name     = "iqs-flow-marketing"
+  location = var.region
+
+  template {
+    service_account = google_service_account.web.email
+
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/iqs-flow/iqs-flow-marketing:latest"
+
+      ports {
+        container_port = 3000
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+    }
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+  }
+
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
+  }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "marketing_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.marketing.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 # Public access
 resource "google_cloud_run_v2_service_iam_member" "web_public" {
   project  = var.project_id

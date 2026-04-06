@@ -70,6 +70,14 @@ resource "google_cloud_run_v2_service_iam_member" "build_deploy_web" {
   member   = "serviceAccount:${google_service_account.build.email}"
 }
 
+resource "google_cloud_run_v2_service_iam_member" "build_deploy_marketing" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.marketing.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.build.email}"
+}
+
 resource "google_project_iam_member" "build_secrets" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
