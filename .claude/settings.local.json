@@ -23,7 +23,11 @@
       "Bash(gcloud iam:*)",
       "Bash(gcloud services:*)",
       "Bash(mv c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/apply-new-resources.md c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/apply-new-resources.done.md)",
-      "Bash(mv c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.md c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.done.md)"
+      "Bash(mv c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.md c:/Users/joshu/Flow/iqs-flow-infra/.claude/tasks/github-actions-plan-on-pr.done.md)",
+      "Bash(MSYS_NO_PATHCONV=1 gh issue list --repo jhinton1/iqs-flow-infra --state open)",
+      "Bash(MSYS_NO_PATHCONV=1 gh project item-list 1 --owner IQSFlow --format json)",
+      "Bash(MSYS_NO_PATHCONV=1 gh issue list --org IQSFlow --state open --limit 50)",
+      "Bash(MSYS_NO_PATHCONV=1 gh search issues --owner IQSFlow --state open --limit 50)"
     ]
   }
 }
