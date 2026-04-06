@@ -62,6 +62,8 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 - **Domain mappings are managed via gcloud**, not Terraform (v1/v2 API mismatch)
 - **Secret VALUES are managed via gcloud**, Terraform only manages the secret shell
 - **Cloud Run images are managed by Cloud Build**, Terraform ignores image changes via lifecycle
+- **Cloud SQL requires at least one connectivity method** — can't set `ipv4_enabled = false` without Private IP or PSC configured
+- **Set secret values before referencing in Cloud Run** — create secret shell in TF, set value via gcloud, then apply Cloud Run changes
 
 ## Terraform State
 
@@ -75,7 +77,7 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 |---------|---------|-------|
 | `iqs-api@` | Cloud Run API | Cloud SQL Client, Secret Accessor |
 | `iqs-web@` | Cloud Run Web | Secret Accessor |
-| `iqs-build@` | Cloud Build | AR Writer, Run Developer, Secret Accessor, SA User, Log Writer |
+| `iqs-build@` | Cloud Build | AR Writer, Run Developer (scoped to api+web services), Secret Accessor, SA User (scoped to api+web SAs), Log Writer |
 | `iqs-scheduler@` | Cloud Scheduler | Run Invoker |
 
 ## GCP Project Details
@@ -112,6 +114,13 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 Terraform v1.11.4 is installed at `/c/Users/joshu/bin/terraform`. Always set PATH:
 ```bash
 export PATH="/c/Users/joshu/bin:$PATH"
+```
+
+## gcloud CLI
+
+On Windows/MSYS2, direct `gcloud` calls fail with path translation. Use:
+```bash
+cmd //c "gcloud secrets versions add SECRET_NAME --data-file=- --project=crested-booking-488922-f7"
 ```
 
 ---
