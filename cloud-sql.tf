@@ -10,12 +10,13 @@ resource "google_sql_database_instance" "main" {
     disk_type         = "PD_SSD"
 
     ip_configuration {
-      ipv4_enabled = true
+      ipv4_enabled = false
+      ssl_mode     = "ENCRYPTED_ONLY"
     }
 
     backup_configuration {
       enabled                        = true
-      point_in_time_recovery_enabled = false
+      point_in_time_recovery_enabled = true
       start_time                     = "03:00"
     }
   }
