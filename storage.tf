@@ -1,5 +1,5 @@
 resource "google_storage_bucket" "uploads" {
-  name          = "${var.project_id}-iqs-flow-uploads"
+  name          = "${var.project_id}-iqs-flow-uploads${local.env_suffix}"
   location      = var.region
   force_destroy = false
 

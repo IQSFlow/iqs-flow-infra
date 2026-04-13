@@ -1,37 +1,37 @@
 # --- Pub/Sub Topics ---
 
 resource "google_pubsub_topic" "worker_location" {
-  name = "worker-location"
+  name = "worker-location${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "task_assignment" {
-  name = "task-assignment"
+  name = "task-assignment${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "inspection_complete" {
-  name = "inspection-complete"
+  name = "inspection-complete${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "work_order_updated" {
-  name = "work-order-updated"
+  name = "work-order-updated${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "ticket_created" {
-  name = "ticket-created"
+  name = "ticket-created${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "alert_triggered" {
-  name = "alert-triggered"
+  name = "alert-triggered${local.env_suffix}"
 }
 
 resource "google_pubsub_topic" "dead_letter" {
-  name = "dead-letter"
+  name = "dead-letter${local.env_suffix}"
 }
 
 # --- Subscriptions ---
 
 resource "google_pubsub_subscription" "api_worker_location" {
-  name  = "api-worker-location"
+  name  = "api-worker-location${local.env_suffix}"
   topic = google_pubsub_topic.worker_location.id
 
   ack_deadline_seconds = 30

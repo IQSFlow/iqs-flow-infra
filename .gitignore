@@ -3,6 +3,7 @@
 *.tfstate.backup
 *.tfvars
 !terraform.tfvars.example
+!environments/*.tfvars
 # .terraform.lock.hcl — keep in git for reproducibility
 crash.log
 *.tfplan

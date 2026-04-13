@@ -1,5 +1,5 @@
 resource "google_cloud_scheduler_job" "session_cleanup" {
-  name        = "iqs-cleanup-expired-sessions"
+  name        = "iqs-cleanup-expired-sessions${local.env_suffix}"
   description = "Clean up expired sessions nightly"
   schedule    = "0 3 * * *"
   time_zone   = "America/New_York"
@@ -15,7 +15,7 @@ resource "google_cloud_scheduler_job" "session_cleanup" {
 }
 
 resource "google_cloud_scheduler_job" "weekly_report" {
-  name        = "iqs-weekly-report"
+  name        = "iqs-weekly-report${local.env_suffix}"
   description = "Generate weekly inspection summary"
   schedule    = "0 8 * * 1"
   time_zone   = "America/New_York"
@@ -31,7 +31,7 @@ resource "google_cloud_scheduler_job" "weekly_report" {
 }
 
 resource "google_cloud_scheduler_job" "daily_cleanup" {
-  name             = "iqs-flow-daily-cleanup"
+  name             = "iqs-flow-daily-cleanup${local.env_suffix}"
   description      = "Runs daily cleanup of old location events, audit logs, sessions, and notifications"
   schedule         = "0 3 * * *"
   time_zone        = "America/New_York"

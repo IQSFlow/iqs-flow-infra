@@ -45,3 +45,20 @@ variable "web_domain" {
   type        = string
   default     = "iqsflow.com"
 }
+
+variable "marketing_domain" {
+  description = "Custom domain for marketing site"
+  type        = string
+  default     = "iqsflow.com"
+}
+
+variable "environment" {
+  description = "Environment name, derived from workspace. Override via tfvars if needed."
+  type        = string
+  default     = "dev"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be 'dev' or 'prod'."
+  }
+}

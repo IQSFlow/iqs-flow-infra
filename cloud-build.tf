@@ -1,5 +1,5 @@
 resource "google_cloudbuild_trigger" "api_deploy" {
-  name            = "iqs-flow-api-deploy"
+  name            = "iqs-flow-api-deploy${local.env_suffix}"
   location        = var.region
   service_account = "projects/${var.project_id}/serviceAccounts/${google_service_account.build.email}"
 
@@ -14,7 +14,7 @@ resource "google_cloudbuild_trigger" "api_deploy" {
 }
 
 resource "google_cloudbuild_trigger" "web_deploy" {
-  name            = "iqs-flow-web-deploy"
+  name            = "iqs-flow-web-deploy${local.env_suffix}"
   location        = var.region
   service_account = "projects/${var.project_id}/serviceAccounts/${google_service_account.build.email}"
 
@@ -29,7 +29,7 @@ resource "google_cloudbuild_trigger" "web_deploy" {
 }
 
 resource "google_cloudbuild_trigger" "shared_publish" {
-  name            = "iqs-flow-shared-publish"
+  name            = "iqs-flow-shared-publish${local.env_suffix}"
   location        = var.region
   service_account = "projects/${var.project_id}/serviceAccounts/${google_service_account.build.email}"
 

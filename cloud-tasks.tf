@@ -1,5 +1,5 @@
 resource "google_cloud_tasks_queue" "email" {
-  name     = "iqs-email-queue"
+  name     = "iqs-email-queue${local.env_suffix}"
   location = var.region
 
   rate_limits {
@@ -16,7 +16,7 @@ resource "google_cloud_tasks_queue" "email" {
 }
 
 resource "google_cloud_tasks_queue" "reports" {
-  name     = "iqs-reports-queue"
+  name     = "iqs-reports-queue${local.env_suffix}"
   location = var.region
 
   rate_limits {

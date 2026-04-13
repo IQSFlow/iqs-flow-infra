@@ -1,0 +1,5 @@
+environment      = "prod"
+api_domain       = "api.iqsflow.com"
+web_domain       = "app.iqsflow.com"
+marketing_domain = "iqsflow.com"
+db_tier          = "db-custom-1-3840"

@@ -8,14 +8,14 @@ resource "google_monitoring_notification_channel" "email" {
 }
 
 resource "google_monitoring_alert_policy" "api_errors" {
-  display_name = "IQS Flow API - High Error Rate"
+  display_name = "IQS Flow API - High Error Rate (${local.env_label})"
   combiner     = "OR"
 
   conditions {
     display_name = "Cloud Run API 5xx errors > 5 in 5 min"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"iqs-flow-api\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
+      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.api.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
       comparison      = "COMPARISON_GT"
       threshold_value = 5
       duration        = "300s"
@@ -35,14 +35,14 @@ resource "google_monitoring_alert_policy" "api_errors" {
 }
 
 resource "google_monitoring_alert_policy" "db_connections" {
-  display_name = "IQS Flow DB - High Connection Count"
+  display_name = "IQS Flow DB - High Connection Count (${local.env_label})"
   combiner     = "OR"
 
   conditions {
     display_name = "Cloud SQL connections > 80"
 
     condition_threshold {
-      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.database_id = \"${var.project_id}:iqs-flow-db\" AND metric.type = \"cloudsql.googleapis.com/database/postgresql/num_backends\""
+      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.database_id = \"${var.project_id}:${google_sql_database_instance.main.name}\" AND metric.type = \"cloudsql.googleapis.com/database/postgresql/num_backends\""
       comparison      = "COMPARISON_GT"
       threshold_value = 80
       duration        = "300s"
@@ -60,7 +60,7 @@ resource "google_monitoring_alert_policy" "db_connections" {
 # --- Uptime Checks ---
 
 resource "google_monitoring_uptime_check_config" "api_health" {
-  display_name = "IQS Flow API - Health Check"
+  display_name = "IQS Flow API - Health Check (${local.env_label})"
   timeout      = "10s"
   period       = "60s"
 
@@ -81,7 +81,7 @@ resource "google_monitoring_uptime_check_config" "api_health" {
 }
 
 resource "google_monitoring_uptime_check_config" "web_health" {
-  display_name = "IQS Flow Web - Health Check"
+  display_name = "IQS Flow Web - Health Check (${local.env_label})"
   timeout      = "10s"
   period       = "60s"
 
@@ -104,7 +104,7 @@ resource "google_monitoring_uptime_check_config" "web_health" {
 # --- Alert: API Downtime ---
 
 resource "google_monitoring_alert_policy" "api_downtime" {
-  display_name = "IQS Flow API - Downtime"
+  display_name = "IQS Flow API - Downtime (${local.env_label})"
   combiner     = "OR"
 
   conditions {
@@ -133,14 +133,14 @@ resource "google_monitoring_alert_policy" "api_downtime" {
 # --- Alert: High Error Rate (additional policy matching task requirements) ---
 
 resource "google_monitoring_alert_policy" "api_high_error_rate" {
-  display_name = "IQS Flow API - Critical Error Rate"
+  display_name = "IQS Flow API - Critical Error Rate (${local.env_label})"
   combiner     = "OR"
 
   conditions {
     display_name = "Cloud Run API 5xx error rate > 10% over 10 min"
 
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"iqs-flow-api\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
+      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.api.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
       comparison      = "COMPARISON_GT"
       threshold_value = 10
       duration        = "600s"

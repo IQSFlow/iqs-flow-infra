@@ -1,5 +1,5 @@
 resource "google_cloud_run_v2_service" "api" {
-  name     = "iqs-flow-api"
+  name     = "iqs-flow-api${local.env_suffix}"
   location = var.region
 
   template {
@@ -29,6 +29,16 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "NODE_ENV"
         value = "production"
+      }
+
+      env {
+        name  = "APP_ENV"
+        value = local.env_label
+      }
+
+      env {
+        name  = "CORS_ORIGINS"
+        value = local.is_prod ? "https://app.iqsflow.com,https://iqsflow.com,https://www.iqsflow.com" : "https://dev.app.iqsflow.com,https://dev.api.iqsflow.com,http://localhost:3000"
       }
 
       env {
@@ -118,7 +128,7 @@ resource "google_cloud_run_v2_service" "api" {
 }
 
 resource "google_cloud_run_v2_service" "web" {
-  name     = "iqs-flow-web"
+  name     = "iqs-flow-web${local.env_suffix}"
   location = var.region
 
   template {
@@ -141,6 +151,11 @@ resource "google_cloud_run_v2_service" "web" {
       env {
         name  = "NODE_ENV"
         value = "production"
+      }
+
+      env {
+        name  = "NEXT_PUBLIC_ENV"
+        value = local.env_label
       }
 
       resources {
@@ -171,7 +186,7 @@ resource "google_cloud_run_v2_service" "web" {
 
 # Marketing website (iqsflow.com)
 resource "google_cloud_run_v2_service" "marketing" {
-  name     = "iqs-flow-marketing"
+  name     = "iqs-flow-marketing${local.env_suffix}"
   location = var.region
 
   template {
@@ -215,7 +230,7 @@ resource "google_cloud_run_v2_service_iam_member" "marketing_public" {
 # --- Migration Job ---
 
 resource "google_cloud_run_v2_job" "migrations" {
-  name     = "run-migrations"
+  name     = "run-migrations${local.env_suffix}"
   location = var.region
 
   template {
