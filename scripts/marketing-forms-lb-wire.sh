@@ -83,10 +83,22 @@ fi
 # Add a host rule for iqsflow.com + www.iqsflow.com if not already present,
 # with a path matcher that routes /api/forms/* to the forms backend and
 # everything else to the default (which will be the static bucket after cutover).
+# Detect whether the URL map default is a backend service or backend bucket
+# (cutover to GCS changes the default from service -> bucket; either must be
+# preserved as the matcher's fallback so non-/api/forms paths continue to resolve).
+CURRENT_DEFAULT_URL=$(gcloud compute url-maps describe "${URL_MAP}" --project="${PROJECT_ID}" --format='value(defaultService)')
+CURRENT_DEFAULT_NAME=$(basename "${CURRENT_DEFAULT_URL}")
+if [[ "${CURRENT_DEFAULT_URL}" == *"/backendBuckets/"* ]]; then
+  DEFAULT_FLAG="--default-backend-bucket=${CURRENT_DEFAULT_NAME}"
+else
+  DEFAULT_FLAG="--default-service=${CURRENT_DEFAULT_NAME}"
+fi
+echo "==> Using matcher default: ${DEFAULT_FLAG}"
+
 gcloud compute url-maps add-path-matcher "${URL_MAP}" \
   --project="${PROJECT_ID}" \
   --path-matcher-name="${PATH_MATCHER_NAME}" \
-  --default-service="$(gcloud compute url-maps describe ${URL_MAP} --project=${PROJECT_ID} --format='value(defaultService.basename())')" \
+  ${DEFAULT_FLAG} \
   --backend-service-path-rules="/api/forms/*=${BACKEND_SERVICE}" \
   --new-hosts="iqsflow.com,www.iqsflow.com" || {
     echo "If this failed because the hosts are already claimed by another path matcher,"
