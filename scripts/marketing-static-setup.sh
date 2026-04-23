@@ -40,7 +40,7 @@ else
     --project="${PROJECT_ID}" \
     --location="${REGION}" \
     --uniform-bucket-level-access \
-    --public-access-prevention=inherited
+    --no-public-access-prevention
 fi
 
 echo "==> Granting public read on bucket"
