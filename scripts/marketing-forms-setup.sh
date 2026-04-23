@@ -74,6 +74,18 @@ gcloud secrets add-iam-policy-binding "${SECRET_NAME}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor" >/dev/null
 
+# DWD via signJwt — Cloud Functions Gen 2 has no SA private key on disk, so
+# the function uses the IAM Credentials API to sign a DWD JWT. That requires
+# the SA to hold tokenCreator on itself.
+echo "==> Granting SA tokenCreator on itself (required for DWD signJwt)"
+gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+  --project="${PROJECT_ID}" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+
+# IAM Credentials API must be enabled for signJwt.
+gcloud services enable iamcredentials.googleapis.com --project="${PROJECT_ID}"
+
 # ---- Summary + manual steps ----------------------------------------------
 
 echo ""

@@ -105,6 +105,7 @@ Adds `/api/forms/*` routing to `iqs-flow-urlmap`. After this, `iqsflow.com/api/f
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `400 failedPrecondition` from Gmail | DWD impersonation silently failed; the SA token was used as-is and a service account can't have a Gmail mailbox | Confirm `getImpersonatedAccessToken()` (signJwt + JWT-bearer exchange) is being used — NOT `google.auth.GoogleAuth({ clientOptions: { subject } })`, which only does DWD when a private key is on disk. Also confirm the SA has `roles/iam.serviceAccountTokenCreator` on itself. |
 | `403 IAM_PERMISSION_DENIED` from Gmail | Domain-wide delegation not configured or wrong scope | Re-check step 3 — Client ID + scope |
 | `failed_bot_check` on every submit | Site key / secret mismatch, or domains not authorized | Re-check reCAPTCHA admin config; redeploy secret |
 | `missing_recaptcha_token` | Script loading order broken on the page | Check `config.js` loads BEFORE `shared.js` |
