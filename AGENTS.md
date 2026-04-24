@@ -63,6 +63,12 @@ When Claude orchestrator merges a branch after Codex review, the merge commit me
 Merge claude/00-list-pages-render-new-fields (Codex review: clean, no blockers)
 ```
 
+## Codex slash commands (installed at `~/.codex/commands/`)
+
+- **`/review-task <branch>`** — Review one Claude worker branch end-to-end against this protocol. Single-shot; writes report to `.claude/reviews/<branch>.md` on the branch and commits it. Add `--apply` to also apply the listed minimal patches.
+- **`/check-reviews`** — Codex equivalent of `/check-tasks`. Auto-pick the next unreviewed `claude/*` branch in this repo, review it, chain to the next. Stops on `BLOCKED` verdict or contract mismatch.
+- **`/monitor-reviews`** — Status dashboard across all repos: which branches await review, which are CLEAN/NEEDS_FIXES/BLOCKED, which next actions belong to Codex vs Claude orchestrator.
+
 ## When in doubt
 
 - **Codex:** report findings, don't act unless explicitly invited.
