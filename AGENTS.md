@@ -44,7 +44,7 @@ When invited to review (e.g. "Codex, review `claude/00-list-pages-render-new-fie
 ## Coexistence rules
 
 - **Do not both edit the same file at the same time.** Orchestrator (Claude) and Codex coordinate via task files + review reports, not parallel edits.
-- **Codex does not run `/check-tasks` autonomously.** Worker Claude owns the task queue; Codex is invited per-diff.
+- **Codex `/check-tasks` only picks up pair-mode tasks** (those with `pair: true` in the task frontmatter). All other tasks belong to Claude worker. Pair-mode Codex runs build on `codex/<task-stem>` branches and **never merge to main**; the user compares against `claude/<task-stem>` and picks the winner.
 - **Codex does not push tags or trigger deploys.** Claude orchestrator owns the deploy lane (tag pushes, prod promotion).
 - **No git config changes, no force-pushes, no `--no-verify`** from either agent.
 - **Destructive ops** (DB migrations, secret rotations, prod tag pushes, branch deletions): Codex flags risk, Claude/user authorize and execute.
@@ -66,8 +66,10 @@ Merge claude/00-list-pages-render-new-fields (Codex review: clean, no blockers)
 ## Codex slash commands (installed at `~/.codex/commands/`)
 
 - **`/review-task <branch>`** — Review one Claude worker branch end-to-end against this protocol. Single-shot; writes report to `.claude/reviews/<branch>.md` on the branch and commits it. Add `--apply` to also apply the listed minimal patches.
-- **`/check-reviews`** — Codex equivalent of `/check-tasks`. Auto-pick the next unreviewed `claude/*` branch in this repo, review it, chain to the next. Stops on `BLOCKED` verdict or contract mismatch.
+- **`/check-reviews`** — Auto-pick the next unreviewed `claude/*` branch in this repo, review it, chain to the next. Stops on `BLOCKED` verdict or contract mismatch.
 - **`/monitor-reviews`** — Status dashboard across all repos: which branches await review, which are CLEAN/NEEDS_FIXES/BLOCKED, which next actions belong to Codex vs Claude orchestrator.
+- **`/check-tasks`** — Pick up the next pair-mode task (`pair: true`) in this repo, build it on `codex/<task-stem>`, push, write `.codex.done.md`, chain to next. Never merges to main; user compares against `claude/<task-stem>` and picks winner.
+- **`/monitor-tasks`** — Cross-repo task dashboard: PENDING / CLAUDE_DONE / PAIR_PARTIAL_* / PAIR_READY states across all six repos.
 
 ## When in doubt
 
