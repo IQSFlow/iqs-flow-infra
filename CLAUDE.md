@@ -102,7 +102,7 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 ### Terraform
 - **ALWAYS run `terraform plan`** before `terraform apply`
 - **NEVER apply** if plan shows destroy on Cloud Run, Cloud SQL, or secrets
-- **NEVER push directly to `main`** — only push `claude/` branches
+- **Never force-push `main` or commit straight onto it.** Work on a `claude/<task>` branch; single-mode tasks then merge to `main` per the global `CLAUDE.md` autonomous flow. Tasks touching auth, migrations, or cross-tenant data stop at a pushed `claude/` branch for the Codex review gate.
 - **Review all changes** in the plan output before applying
 
 ### When Unsure → Ask the user first
