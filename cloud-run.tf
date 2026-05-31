@@ -2,6 +2,12 @@ resource "google_cloud_run_v2_service" "api" {
   name     = "iqs-flow-api${local.env_suffix}"
   location = var.region
 
+  # DEFAULT "INGRESS_TRAFFIC_ALL" preserves current internet-facing behavior.
+  # Flip var.api_ingress to INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER once
+  # api.iqsflow.com sits behind an external HTTPS LB (with Cloud Armor / IAP);
+  # see variables.tf and the cutover notes in .done.md.
+  ingress = var.api_ingress
+
   template {
     service_account = google_service_account.api.email
 
@@ -285,10 +291,32 @@ resource "google_cloud_run_v2_service_iam_member" "web_public" {
   member   = "allUsers"
 }
 
+# Public invoke for the API. DEFAULT (var.api_allow_public_invoke = true)
+# preserves current behavior: anyone can hit the service, so cron/report/cleanup
+# routes are reachable at the edge and are guarded ONLY by the in-app OIDC check
+# in iqs-flow-api/src/routes/cron.ts (verifyCronAuth -> verifyIdToken, allowing
+# the iqs-scheduler@ and iqs-api@ SAs). Setting this false requires fronting the
+# API with an IAP/LB identity and granting run.invoker to that identity AND to
+# google_service_account.scheduler, or all callers (dashboard + cron) get 403.
 resource "google_cloud_run_v2_service_iam_member" "api_public" {
+  count = var.api_allow_public_invoke ? 1 : 0
+
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.api.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# When the API is no longer allUsers-invokable, the scheduler SA still needs an
+# explicit run.invoker grant so cron jobs (scheduler.tf) keep working. Inert
+# while public invoke is on (the allUsers grant already covers the scheduler).
+resource "google_cloud_run_v2_service_iam_member" "api_scheduler_invoke" {
+  count = var.api_allow_public_invoke ? 0 : 1
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.api.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
 }
