@@ -5,8 +5,19 @@ resource "google_storage_bucket" "uploads" {
 
   uniform_bucket_level_access = true
 
+  # Tightened from a wildcard "https://iqs-flow-web-*-uc.a.run.app" origin
+  # (GCS CORS does not honor wildcards anyway, so it was effectively dead) to the
+  # explicit app domains per environment. Mirrors the API CORS_ORIGINS allowlist
+  # in cloud-run.tf. localhost is dev-only for local upload testing.
   cors {
-    origin          = ["https://iqsflow.com", "https://www.iqsflow.com", "https://iqs-flow-web-*-uc.a.run.app"]
+    origin = local.is_prod ? [
+      "https://app.iqsflow.com",
+      "https://iqsflow.com",
+      "https://www.iqsflow.com",
+      ] : [
+      "https://dev.app.iqsflow.com",
+      "http://localhost:3000",
+    ]
     method          = ["GET", "PUT", "POST"]
     response_header = ["Content-Type"]
     max_age_seconds = 3600

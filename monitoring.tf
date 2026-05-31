@@ -8,7 +8,11 @@ resource "google_monitoring_notification_channel" "email" {
 }
 
 resource "google_monitoring_alert_policy" "api_errors" {
-  display_name = "IQS Flow API - High Error Rate (${local.env_label})"
+  # Absolute-count alert: trips on any meaningful burst of 5xx, even at low
+  # traffic where a ratio alert would stay quiet. Paired with api_5xx_ratio
+  # below (which catches sustained elevated error *rate* at higher traffic).
+  # Renamed from the misleading "High Error Rate" — this is a count, not a rate.
+  display_name = "IQS Flow API - 5xx Error Count (${local.env_label})"
   combiner     = "OR"
 
   conditions {
@@ -130,24 +134,35 @@ resource "google_monitoring_alert_policy" "api_downtime" {
   }
 }
 
-# --- Alert: High Error Rate (additional policy matching task requirements) ---
-
-resource "google_monitoring_alert_policy" "api_high_error_rate" {
-  display_name = "IQS Flow API - Critical Error Rate (${local.env_label})"
+# --- Alert: genuine 5xx error RATE (ratio of 5xx to total requests) ---
+# Replaces the old "Critical Error Rate" policy, which was mislabeled: it used
+# ALIGN_SUM on the 5xx count (threshold 10) and therefore overlapped with
+# api_errors (count > 5) instead of measuring a rate. This version uses MQL to
+# divide 5xx request_count by total request_count and alerts on a true ratio,
+# so it stays meaningful regardless of traffic volume.
+resource "google_monitoring_alert_policy" "api_5xx_ratio" {
+  display_name = "IQS Flow API - 5xx Error Rate > 10% (${local.env_label})"
   combiner     = "OR"
 
   conditions {
-    display_name = "Cloud Run API 5xx error rate > 10% over 10 min"
+    display_name = "Cloud Run API 5xx ratio > 10% over 10 min"
 
-    condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.api.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 10
-      duration        = "600s"
+    condition_monitoring_query_language {
+      query    = <<-EOT
+        fetch cloud_run_revision
+        | metric 'run.googleapis.com/request_count'
+        | filter resource.service_name == '${google_cloud_run_v2_service.api.name}'
+        | align rate(10m)
+        | { t_5xx: filter metric.response_code_class == '5xx' | group_by [], [v: sum(value.request_count)]
+          ; t_all: group_by [], [v: sum(value.request_count)] }
+        | join
+        | value [ratio: t_5xx.v / t_all.v]
+        | condition ratio > 0.10
+      EOT
+      duration = "600s"
 
-      aggregations {
-        alignment_period   = "600s"
-        per_series_aligner = "ALIGN_SUM"
+      trigger {
+        count = 1
       }
     }
   }
@@ -156,5 +171,92 @@ resource "google_monitoring_alert_policy" "api_high_error_rate" {
 
   alert_strategy {
     auto_close = "3600s"
+  }
+}
+
+# --- Alert: Cloud SQL CPU utilization ---
+resource "google_monitoring_alert_policy" "db_cpu" {
+  display_name = "IQS Flow DB - High CPU (${local.env_label})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Cloud SQL CPU utilization > 80% for 5 min"
+
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.database_id = \"${var.project_id}:${google_sql_database_instance.main.name}\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.8
+      duration        = "300s"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.name]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+}
+
+# --- Alert: Cloud SQL disk utilization (running out of storage) ---
+resource "google_monitoring_alert_policy" "db_disk" {
+  display_name = "IQS Flow DB - High Disk Utilization (${local.env_label})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Cloud SQL disk utilization > 85% for 5 min"
+
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.database_id = \"${var.project_id}:${google_sql_database_instance.main.name}\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.85
+      duration        = "300s"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.name]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+}
+
+# --- Alert: Pub/Sub dead-letter queue accumulation ---
+# Any message landing in the dead-letter topic means a subscriber exhausted its
+# delivery attempts (see pubsub.tf dead_letter_policy, max_delivery_attempts=5).
+# Alerts as soon as unacked messages appear so failures aren't silently dropped.
+resource "google_monitoring_alert_policy" "pubsub_dead_letter" {
+  display_name = "IQS Flow Pub/Sub - Dead-Letter Messages (${local.env_label})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Dead-letter topic received messages > 0 in 5 min"
+
+    condition_threshold {
+      filter          = "resource.type = \"pubsub_topic\" AND resource.labels.topic_id = \"${google_pubsub_topic.dead_letter.name}\" AND metric.type = \"pubsub.googleapis.com/topic/send_message_operation_count\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.name]
+
+  alert_strategy {
+    auto_close = "1800s"
   }
 }
