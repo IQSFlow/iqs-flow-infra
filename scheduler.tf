@@ -220,3 +220,28 @@ resource "google_cloud_scheduler_job" "compute_vas" {
     retry_count = 3
   }
 }
+
+# Timer-driven escalation sweep: unassigned Critical/High tickets, SLA-breached
+# tickets, overdue-uncompleted cleaning tasks, and overdue work orders. Routes
+# alerts to in-app + push + email so they no longer depend on someone touching
+# a record. Every 15 minutes.
+resource "google_cloud_scheduler_job" "escalation_sweep" {
+  name             = "iqs-flow-escalation-sweep${local.env_suffix}"
+  description      = "Escalate unassigned/overdue tickets, tasks, and work orders (every 15 min)"
+  schedule         = "*/15 * * * *"
+  time_zone        = "America/New_York"
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cron_base_uri}/api/cron/escalation-sweep"
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+
+  retry_config {
+    retry_count = 3
+  }
+}
