@@ -4,7 +4,7 @@ Bootstraps a fresh machine (Mac primary, Linux compatible) to a working IQS Flow
 
 ## What you get
 
-- All 6 IQS Flow repos cloned under `~/Flow/`
+- All 6 IQS Flow git repos cloned under `~/Flow/` (`shared`, `api`, `web`, `mobile`, `infra`, `marketing`). The 7th workspace root, `iqs-flow-design-handoff`, is read-only reference material (not a git repo — copied manually, see step below).
 - All required tools installed (Node 20, gcloud, cloud-sql-proxy, Python, pgcli, gh CLI)
 - `gcloud` authenticated to `crested-booking-488922-f7`
 - Private npm registry (`iqs-flow-npm` Artifact Registry) configured per repo
@@ -43,7 +43,7 @@ The script is idempotent — safe to re-run if anything fails partway through.
    - `gh auth login` — GitHub CLI auth (use SSH if you have a key, else HTTPS with token)
 4. **Repos** — clones all 6 IQS Flow repos under `~/Flow/`
 5. **Per-repo setup** — runs `refresh-npmrc.sh` (writes `.npmrc` with a fresh access token), then `npm install` in each repo
-6. **`.env` files** — pulls all secrets from Secret Manager and writes the matching `.env` files (api, web, mobile)
+6. **`.env` files** — pulls secrets from Secret Manager and writes `.env` for api + web. Mobile only gets a copy of its `.env.example` (if one exists) — Expo config is mostly checked in, so mobile rarely needs a hand-built `.env`.
 7. **VSCode workspace** — generates `~/Flow/iqs-flow.code-workspace` with all 7 directories included (6 repos + design handoff)
 
 ## Manual steps not covered by the bootstrap
@@ -141,7 +141,7 @@ gh --version
 claude --version
 
 # All repos cloned
-ls ~/Flow/                # should show all 6 iqs-flow-* dirs
+ls ~/Flow/                # should show the 6 cloned iqs-flow-* git repos (design-handoff is added manually)
 
 # .env files exist (don't print contents)
 for f in ~/Flow/iqs-flow-api/.env ~/Flow/iqs-flow-web/.env; do

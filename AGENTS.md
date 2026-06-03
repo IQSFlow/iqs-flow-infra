@@ -69,7 +69,7 @@ Merge claude/00-list-pages-render-new-fields (Codex review: clean, no blockers)
 - **`/check-reviews`** — Auto-pick the next unreviewed `claude/*` branch in this repo, review it, chain to the next. Stops on `BLOCKED` verdict or contract mismatch.
 - **`/monitor-reviews`** — Status dashboard across all repos: which branches await review, which are CLEAN/NEEDS_FIXES/BLOCKED, which next actions belong to Codex vs Claude orchestrator.
 - **`/check-tasks`** — Pick up the next pair-mode task (`pair: true`) in this repo, build it on `codex/<task-stem>`, push, write `.codex.done.md`, chain to next. Never merges to main; user compares against `claude/<task-stem>` and picks winner.
-- **`/monitor-tasks`** — Cross-repo task dashboard: PENDING / CLAUDE_DONE / PAIR_PARTIAL_* / PAIR_READY states across all six repos.
+- **`/monitor-tasks`** — Cross-repo task dashboard: PENDING / CLAUDE_DONE / PAIR_PARTIAL_* / PAIR_READY states across the six code repos (`shared`, `api`, `web`, `mobile`, `infra`, `marketing`); `iqs-flow-design-handoff` is read-only reference and carries no tasks.
 
 ## When in doubt
 

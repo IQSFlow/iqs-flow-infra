@@ -7,15 +7,22 @@
 
 ---
 
-## Architecture (4-repo split + infra)
+## Architecture (7-repo workspace)
 
 ```
-iqs-flow-api/       → REST API + Prisma + business logic         → Cloud Run
-iqs-flow-web/       → Next.js dashboard (SSR frontend)            → Cloud Run
-iqs-flow-mobile/    → Expo Android app (cleaners)                 → Play Store (EAS Build)
-iqs-flow-shared/    → Zod schemas, constants, shared types        → npm package (Artifact Registry)
-iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REPO
+iqs-flow-shared/         → Zod schemas, constants, shared types   → npm package (Artifact Registry, @iqsflow/shared)
+iqs-flow-api/            → Hono + Prisma REST API (port 4000)      → Cloud Run
+iqs-flow-web/            → Next.js 15 dashboard + portals (3000)   → Cloud Run
+iqs-flow-mobile/         → Expo Android app (cleaners)             → Play Store (EAS Build) + OTA
+iqs-flow-infra/          → Terraform IaC for ALL GCP resources     ← THIS REPO
+iqs-flow-marketing/      → Marketing site (iqsflow.com)            → Cloud Run (port 3000)
+iqs-flow-design-handoff/ → Design assets / HTML→JSX handoff        → read-only reference (not a git repo)
 ```
+
+**Dependency / wave order:** `shared → api → web + mobile`. Cross-boundary request/response
+contracts live in `@iqsflow/shared`; consumers import them, never hand-roll inline Zod/TS.
+This repo (`infra`) provisions the GCP substrate all of the above run on — it is LIVE in
+production, not a plan.
 
 ---
 
@@ -23,20 +30,23 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 
 | File | Resources |
 |------|-----------|
-| `main.tf` | Provider, GCS backend, required providers |
-| `cloud-run.tf` | API + Web Cloud Run services |
-| `cloud-sql.tf` | PostgreSQL 15 instance, database, user |
-| `secrets.tf` | Secret Manager secrets (values managed via gcloud) |
-| `iam.tf` | 4 service accounts + IAM role bindings |
-| `artifact-registry.tf` | Docker + npm repos |
-| `cloud-build.tf` | 3 Cloud Build triggers (tag-based) |
-| `dns.tf` | Domain mapping documentation (managed via gcloud) |
-| `apis.tf` | All enabled GCP APIs |
-| `scheduler.tf` | Cloud Scheduler cron jobs |
-| `cloud-tasks.tf` | Async task queues |
-| `monitoring.tf` | Alert policies |
-| `variables.tf` | Input variables |
-| `outputs.tf` | Output values (URLs, connection names) |
+| `main.tf` | Provider (`google` + `google-beta` `~> 5.0`), GCS backend, `required_version >= 1.5` |
+| `cloud-run.tf` | API (4000) + Web (3000) + Marketing (3000) Cloud Run services, the `run-migrations` job, and public-invoke IAM (API public-invoke is gated behind `var.api_allow_public_invoke`) |
+| `cloud-sql.tf` | PostgreSQL 15 instance + DB + user, plus inert Private-IP scaffolding (global address + service-networking connection, `count`-gated off by default) |
+| `secrets.tf` | Secret Manager secret shells (values managed via gcloud): `db-url`, `session-secret`, `api-url`, `smtp-pass`, `smtp-user`, `google-maps-api-key`, `aerodatabox-api-key` (all suffixed `-prod` in the prod workspace) |
+| `storage.tf` | GCS uploads bucket (UBLA on, per-env CORS allowlist, 365-day lifecycle) + API `objectAdmin` binding |
+| `iam.tf` | 4 service accounts + IAM bindings. Build SA `run.developer` is scoped per-service (api/web/marketing) and `serviceAccountUser` is scoped per-SA, not project-wide |
+| `pubsub.tf` | 7 topics + worker-location subscription (dead-letter policy) + API publisher/subscriber roles |
+| `cloud-tasks.tf` | 2 async queues: `iqs-email-queue`, `iqs-reports-queue` |
+| `artifact-registry.tf` | `iqs-flow` (Docker) + `iqs-flow-npm` (NPM) repos |
+| `cloud-build.tf` | 3 tag-based triggers: api deploy, web deploy, shared publish (all `^v.*$`). Marketing/forms infra is provisioned by scripts, not a TF trigger |
+| `dns.tf` | Domain-mapping documentation only (managed via gcloud — v1/v2 API mismatch) |
+| `apis.tf` | All enabled GCP APIs (run, sqladmin, build, AR, secret manager, scheduler, tasks, gmail, maps, pubsub, error-reporting, …) |
+| `scheduler.tf` | 11 Cloud Scheduler cron jobs hitting `/api/cron/*`, all OIDC-authed as the scheduler SA |
+| `monitoring.tf` | Email notification channel, 2 uptime checks, 6 alert policies (5xx count, 5xx ratio, DB connections/CPU/disk, Pub/Sub dead-letter) |
+| `variables.tf` | Input variables (incl. Cloud SQL network + Cloud Run ingress hardening toggles, all defaulting to current behavior) |
+| `locals.tf` | Workspace-derived env suffix/label (`prod` workspace → `-prod`; `default` → dev, no suffix) |
+| `outputs.tf` | Output values (API/Web URLs, DB connection name, SA emails) |
 
 ---
 
@@ -61,8 +71,9 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 - **NEVER commit .terraform/ or *.tfstate** — state lives in GCS bucket
 - **Domain mappings are managed via gcloud**, not Terraform (v1/v2 API mismatch)
 - **Secret VALUES are managed via gcloud**, Terraform only manages the secret shell
-- **Cloud Run images are managed by Cloud Build**, Terraform ignores image changes via lifecycle
-- **Cloud SQL requires at least one connectivity method** — can't set `ipv4_enabled = false` without Private IP or PSC configured
+- **Cloud Run images are managed by Cloud Build**, Terraform ignores image changes via lifecycle (`api`, `web`, and the `run-migrations` job)
+- **Cloud SQL requires at least one connectivity method** — connectivity is now variable-driven (`db_ipv4_enabled`, `db_enable_private_ip`, `db_private_network`, `db_authorized_networks`), all defaulting to current behavior (public IPv4 ON, SSL `ENCRYPTED_ONLY`). Private-IP scaffolding is inert (`count = 0`) until enabled. Never set `db_ipv4_enabled = false` before Private IP/PSC is live for every client. See `variables.tf` + `.claude/tasks/infra-hardening.done.md` for the cutover sequence.
+- **API public-invoke + ingress are variable-driven** — `var.api_allow_public_invoke` (default `true`) grants `allUsers` run.invoker; `var.api_ingress` (default `INGRESS_TRAFFIC_ALL`) sets ingress. Cron routes are guarded today by the in-app OIDC check in `iqs-flow-api/src/routes/cron.ts`, not by Cloud Run IAM. Flipping these off requires fronting the API with an LB/IAP and granting the scheduler SA run.invoker, or the dashboard + cron get 403.
 - **Set secret values before referencing in Cloud Run** — create secret shell in TF, set value via gcloud, then apply Cloud Run changes
 
 ## Terraform State
@@ -71,14 +82,41 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 - **Versioning:** Enabled on the bucket
 - **Lock:** Automatic via GCS
 
+## Workspaces (dev vs prod)
+
+Dev and prod are the **same Terraform config** in two workspaces (see `locals.tf`):
+
+- **`default` workspace = dev** — no suffix (`iqs-flow-api`, `iqs-flow-db`, `iqs-flow-db-url`, …). `APP_ENV=dev`.
+- **`prod` workspace = production** — every resource name gets a `-prod` suffix (`iqs-flow-api-prod`, `iqs-flow-db-prod`, `iqs-flow-db-url-prod`, …). `APP_ENV=prod`.
+
+```bash
+terraform workspace list          # shows default + prod
+terraform workspace select prod   # before planning/applying prod
+terraform workspace select default
+```
+
+Per-environment input overrides live in `environments/dev.tfvars` and `environments/prod.tfvars`.
+
+## How app deploys relate to this repo
+
+This repo provisions the infra; **application code deploys are driven by git tags in the
+api/web/shared repos**, not by `terraform apply`:
+
+- `^v.*` tag on `iqs-flow-api` / `iqs-flow-web` → Cloud Build → DEV services (`iqs-flow-api` / `iqs-flow-web`).
+- `^prod-v.*` tag → PROD services (`iqs-flow-api-prod` / `iqs-flow-web-prod`).
+- `v*` tag on `iqs-flow-shared` → publishes `@iqsflow/shared` to the `iqs-flow-npm` Artifact Registry repo.
+
+The Cloud Run image tag is `lifecycle.ignore_changes`-protected here, so Terraform never reverts a
+Cloud Build deployment. Always dev-first, then prod. Don't poll Cloud Build (~5–7 min builds).
+
 ## Service Accounts
 
 | Account | Used By | Roles |
 |---------|---------|-------|
-| `iqs-api@` | Cloud Run API | Cloud SQL Client, Secret Accessor |
-| `iqs-web@` | Cloud Run Web | Secret Accessor |
-| `iqs-build@` | Cloud Build | AR Writer, Run Developer (scoped to api+web services), Secret Accessor, SA User (scoped to api+web SAs), Log Writer |
-| `iqs-scheduler@` | Cloud Scheduler | Run Invoker |
+| `iqs-api@` | Cloud Run API + `run-migrations` job | Cloud SQL Client, Secret Accessor, Vertex AI User (`aiplatform.user`), Cloud Translation User (`cloudtranslate.user`), Pub/Sub Publisher + Subscriber, GCS `objectAdmin` on the uploads bucket |
+| `iqs-web@` | Cloud Run Web **and Marketing** | Secret Accessor |
+| `iqs-build@` | Cloud Build | AR Writer, Run Developer (scoped to api/web/marketing services), Secret Accessor, SA User (scoped to api+web SAs), Log Writer |
+| `iqs-scheduler@` | Cloud Scheduler (OIDC identity on all 11 cron jobs) | Run Invoker |
 
 ## GCP Project Details
 
@@ -86,8 +124,9 @@ iqs-flow-infra/     → Terraform IaC for ALL GCP resources         ← THIS REP
 |-------|-------|
 | Project ID | `crested-booking-488922-f7` |
 | Region | `us-central1` |
-| Cloud SQL | `iqs-flow-db` (PostgreSQL 15) |
-| Domains | `iqsflow.com` (web), `api.iqsflow.com` (API) |
+| Cloud SQL | `iqs-flow-db` (dev) / `iqs-flow-db-prod` (prod), both PostgreSQL 15 |
+| Prod domains | `iqsflow.com` → marketing, `app.iqsflow.com` → web, `api.iqsflow.com` → API |
+| Dev domains | `dev.iqsflow.com` → marketing, `dev.app.iqsflow.com` → web, `dev.api.iqsflow.com` → API |
 
 ---
 
@@ -122,6 +161,12 @@ On Windows/MSYS2, direct `gcloud` calls fail with path translation. Use:
 ```bash
 cmd //c "gcloud secrets versions add SECRET_NAME --data-file=- --project=crested-booking-488922-f7"
 ```
+
+## Windows / PowerShell gotchas
+
+- Use `py`, not `python3` (the bare `python3` is the Windows Store stub).
+- PowerShell 5.1 has no `&&` / `||` chaining and no ternary — use `;` + `if ($?) { }`.
+- Avoid unicode arrows / box-drawing chars inside `.sh`/`.sql`/HCL string literals (encoding breakage); they're fine in Markdown prose like this file.
 
 ---
 
