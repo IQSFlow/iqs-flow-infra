@@ -127,8 +127,18 @@ resource "google_cloud_run_v2_service" "api" {
   }
 
   lifecycle {
+    # Cloud Build owns the API's runtime env + secrets at deploy time via
+    # `gcloud run deploy --set-env-vars/--update-secrets` (iqs-flow-api/cloudbuild.yaml).
+    # That injects secrets NOT declared above — GMAIL_SENDER_SA_EMAIL + IMPERSONATE_USER
+    # (Gmail DWD sender), GOOGLE_MAPS_API_KEY, and GEMINI_API_KEY — and also overrides
+    # CORS_ORIGINS. If Terraform reconciled the env list, a plain `terraform apply`
+    # would STRIP those cloudbuild-injected vars and break email/maps/AI. So ignore
+    # env for the same reason `image` is ignored: the deploy pipeline, not Terraform,
+    # is the source of truth for what the running revision carries. The env blocks
+    # above remain as the create-time baseline + documentation only.
     ignore_changes = [
       template[0].containers[0].image,
+      template[0].containers[0].env,
     ]
   }
 }
@@ -184,8 +194,16 @@ resource "google_cloud_run_v2_service" "web" {
   }
 
   lifecycle {
+    # Cloud Build owns the web app's runtime env + secrets at deploy time via
+    # `gcloud run deploy --set-env-vars/--update-secrets` (iqs-flow-web/cloudbuild.yaml).
+    # That injects SESSION_SECRET + API_URL (both critical: auth + API base) which
+    # are NOT declared above, so if Terraform reconciled the env list a plain
+    # `terraform apply` would STRIP them and take the site down. Ignore env for the
+    # same reason `image` is ignored: the deploy pipeline, not Terraform, is the
+    # source of truth for the running revision's env.
     ignore_changes = [
       template[0].containers[0].image,
+      template[0].containers[0].env,
     ]
   }
 }
