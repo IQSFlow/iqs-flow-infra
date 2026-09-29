@@ -245,3 +245,25 @@ resource "google_cloud_scheduler_job" "escalation_sweep" {
     retry_count = 3
   }
 }
+
+# Advance emergency notification ladders every minute.
+resource "google_cloud_scheduler_job" "emergency_ladder" {
+  name             = "iqs-flow-emergency-ladder${local.env_suffix}"
+  description      = "Advance emergency notification ladders (every minute)"
+  schedule         = "* * * * *"
+  time_zone        = "America/New_York"
+  attempt_deadline = "55s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cron_base_uri}/api/cron/emergency-ladder"
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+
+  retry_config {
+    retry_count = 3
+  }
+}
