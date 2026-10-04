@@ -1,269 +1,395 @@
 # --- Cloud Scheduler jobs ---
 #
-# All jobs target current /api/cron/* routes in iqs-flow-api/src/routes/cron.ts
-# and authenticate with the iqs-scheduler@ service account via OIDC. The API's
-# verifyCronAuth() validates the OIDC token and allows the iqs-scheduler@ (and
-# legacy iqs-api@) SAs. Previously two jobs pointed at retired routes
-# (/api/health/cleanup, /api/reports/weekly) and daily_cleanup ran as the API SA
-# instead of the scheduler SA — both fixed here.
+# LIVE IS THE SOURCE OF TRUTH. Every job below mirrors what
+# `gcloud scheduler jobs list --location=us-central1` returned on 2026-10-04,
+# field for field (name, schedule, time zone, method, URI, OIDC SA + audience,
+# attempt deadline, retry config, description). The live jobs were created and
+# tuned with gcloud over time and they work, so this file describes them rather
+# than "correcting" them. Change a job here AND live together, never only one.
 #
-# OIDC audience: Cloud Scheduler defaults the token audience to the target URI.
-# That works while the service is allUsers-invokable. If var.api_allow_public_invoke
-# is flipped to false (LB/IAP fronting), set oidc_token.audience to the canonical
-# Cloud Run URL and grant the scheduler SA run.invoker (see cloud-run.tf
-# api_scheduler_invoke).
+# Facts about the live fleet that this file encodes on purpose:
+#   * Every live job authenticates as the API SA (iqs-api@), not iqs-scheduler@.
+#     verifyCronAuth() in iqs-flow-api/src/routes/cron.ts accepts both. If
+#     var.api_allow_public_invoke is ever flipped off, the run.invoker grant in
+#     cloud-run.tf (api_scheduler_invoke) must cover iqs-api@ too.
+#   * The OIDC audience is set explicitly. For the per-shift digests the URI
+#     carries ?shift=N but the audience is the bare route.
+#   * Time zones are NOT uniform (America/New_York, UTC, Etc/UTC) and dev/prod
+#     differ for escalation-sweep. Keep the exact strings.
+#   * Dev job names mostly end in "-dev"; the two oldest dev jobs
+#     (iqs-flow-daily-cleanup, iqs-weekly-report) have no suffix.
+#
+# Each job's per-workspace entry carries a `status`:
+#   "managed" - live and already in Terraform state for that workspace.
+#   "import"  - live but not yet in state; the import block below adopts it, so
+#               plan shows an import instead of a create. After the first apply
+#               that performs the import, flip it to "managed".
+#   "create"  - defined in Terraform but NOT live. Plan shows a create. These are
+#               flagged for review; applying them starts a new cron.
+#
+# Base URI: read from the live Cloud Run service via a data source instead of
+# google_cloud_run_v2_service.api.uri. The managed prod API service is marked
+# tainted in state, so its uri plans as "(known after apply)", which would make
+# every prod job plan an in-place update. The run.app URL is deterministic per
+# service name, so the live value is also the post-replace value.
+
+data "google_cloud_run_v2_service" "api_live" {
+  name     = "iqs-flow-api${local.env_suffix}"
+  location = var.region
+}
 
 locals {
-  # Canonical base URL for cron targets. Uses the Cloud Run service URI so jobs
-  # keep working before/independent of any custom-domain or LB cutover.
-  cron_base_uri = google_cloud_run_v2_service.api.uri
-}
+  cron_base_uri = "${data.google_cloud_run_v2_service.api_live.uri}/api/cron"
+  cron_sa_email = google_service_account.api.email
 
-# Nightly housekeeping: expired sessions, stale location events, old queue
-# items, expired reset tokens. Replaces the old session_cleanup +
-# daily_cleanup pair that both targeted cleanup (one via the retired
-# /api/health/cleanup route, one running as the wrong SA).
-resource "google_cloud_scheduler_job" "daily_cleanup" {
-  name             = "iqs-flow-daily-cleanup${local.env_suffix}"
-  description      = "Daily cleanup of expired sessions, old location events, queue items, and reset tokens"
-  schedule         = "0 3 * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
+  # What Cloud Scheduler stores when a job is created without retry flags.
+  scheduler_default_retry = {
+    retry_count          = 0
+    max_retry_duration   = "0s"
+    min_backoff_duration = "5s"
+    max_backoff_duration = "3600s"
+    max_doublings        = 5
+  }
 
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/cleanup"
+  scheduler_retry_3 = merge(local.scheduler_default_retry, { retry_count = 3 })
 
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
+  scheduler_job_defaults = {
+    http_method      = "POST"
+    attempt_deadline = "180s"
+    description      = null
+    query            = ""
+    retry            = local.scheduler_default_retry
+  }
+
+  # key => common settings + `env` = { dev = {...}, prod = {...} }. A workspace
+  # missing from `env` has no such job. Per-env entries may override any common
+  # setting (description, time_zone, ...).
+  scheduler_job_specs = {
+    # --- Live in both dev and prod ---
+
+    compute_benchmarks = {
+      path        = "compute-benchmarks"
+      http_method = "GET"
+      schedule    = "30 2 * * *"
+      time_zone   = "Etc/UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-compute-benchmarks-dev" }
+        prod = { status = "import", name = "iqs-flow-compute-benchmarks-prod" }
+      }
+    }
+
+    compute_vas = {
+      path      = "compute-vas"
+      schedule  = "0 2 * * *"
+      time_zone = "UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-compute-vas-dev", description = "Nightly VAS computation (dev)" }
+        prod = { status = "import", name = "iqs-flow-compute-vas-prod", description = "Nightly VAS computation (prod)" }
+      }
+    }
+
+    # Per-shift digests: URI has ?shift=N, OIDC audience is the bare route.
+    daily_digest_shift1 = {
+      path      = "daily-digest"
+      query     = "?shift=1"
+      schedule  = "15 14 * * *"
+      time_zone = "America/New_York"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-daily-digest-shift1-dev" }
+        prod = { status = "import", name = "iqs-flow-daily-digest-shift1-prod" }
+      }
+    }
+
+    daily_digest_shift2 = {
+      path      = "daily-digest"
+      query     = "?shift=2"
+      schedule  = "15 22 * * *"
+      time_zone = "America/New_York"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-daily-digest-shift2-dev" }
+        prod = { status = "import", name = "iqs-flow-daily-digest-shift2-prod" }
+      }
+    }
+
+    daily_digest_shift3 = {
+      path      = "daily-digest"
+      query     = "?shift=3"
+      schedule  = "15 6 * * *"
+      time_zone = "America/New_York"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-daily-digest-shift3-dev" }
+        prod = { status = "import", name = "iqs-flow-daily-digest-shift3-prod" }
+      }
+    }
+
+    # Advance emergency notification ladders every minute.
+    emergency_ladder = {
+      path             = "emergency-ladder"
+      schedule         = "* * * * *"
+      time_zone        = "Etc/UTC"
+      attempt_deadline = "55s"
+      description      = "Advance emergency notification ladders (every minute)"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-emergency-ladder-dev" }
+        prod = { status = "import", name = "iqs-flow-emergency-ladder-prod" }
+      }
+    }
+
+    # Timer-driven escalation sweep (unassigned/overdue tickets, tasks, WOs).
+    # Live time zones differ between envs; harmless for a */15 schedule.
+    escalation_sweep = {
+      path     = "escalation-sweep"
+      schedule = "*/15 * * * *"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-escalation-sweep-dev", time_zone = "Etc/UTC" }
+        prod = { status = "import", name = "iqs-flow-escalation-sweep-prod", time_zone = "America/New_York" }
+      }
+    }
+
+    expire_stale_runs = {
+      path        = "expire-stale-runs"
+      http_method = "GET"
+      schedule    = "0 */6 * * *"
+      time_zone   = "Etc/UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-expire-stale-runs-dev" }
+        prod = { status = "import", name = "iqs-flow-expire-stale-runs-prod" }
+      }
+    }
+
+    form_proposal_sweep = {
+      path        = "form-proposal-sweep"
+      http_method = "GET"
+      schedule    = "0 4 * * *"
+      time_zone   = "Etc/UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-form-proposal-sweep-dev" }
+        prod = { status = "import", name = "iqs-flow-form-proposal-sweep-prod" }
+      }
+    }
+
+    learn_geofences = {
+      path        = "learn-geofences"
+      http_method = "GET"
+      schedule    = "30 4 * * *"
+      time_zone   = "Etc/UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-learn-geofences-dev" }
+        prod = { status = "import", name = "iqs-flow-learn-geofences-prod" }
+      }
+    }
+
+    process_pm_plans = {
+      path      = "process-pm-plans"
+      schedule  = "0 6 * * *"
+      time_zone = "UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-process-pm-plans-dev", description = "Daily PM plan processing (dev)" }
+        prod = { status = "import", name = "iqs-flow-process-pm-plans-prod", description = "Daily PM plan processing (prod)" }
+      }
+    }
+
+    rollup_zone_metrics = {
+      path        = "rollup-zone-metrics"
+      http_method = "GET"
+      schedule    = "0 1 * * *"
+      time_zone   = "Etc/UTC"
+      env = {
+        dev  = { status = "import", name = "iqs-flow-rollup-zone-metrics-dev" }
+        prod = { status = "import", name = "iqs-flow-rollup-zone-metrics-prod" }
+      }
+    }
+
+    # --- Live in one env only ---
+
+    # Nightly housekeeping. Live in dev only (legacy unsuffixed name, already in
+    # dev state). NOT live in prod: the prod entry is a flagged create.
+    daily_cleanup = {
+      path             = "cleanup"
+      schedule         = "0 3 * * *"
+      time_zone        = "America/New_York"
+      attempt_deadline = "300s"
+      description      = "Runs daily cleanup of old location events, audit logs, sessions, and notifications"
+      retry            = local.scheduler_retry_3
+      env = {
+        dev  = { status = "managed", name = "iqs-flow-daily-cleanup" }
+        prod = { status = "create", name = "iqs-flow-daily-cleanup-prod" }
+      }
+    }
+
+    # Combined daily manager digest. Prod job was created by hand on 2026-10-03.
+    # No dev job is live; Terraform already defined one, so the dev entry is a
+    # flagged create.
+    daily_digest = {
+      path        = "daily-digest"
+      schedule    = "0 7 * * *"
+      time_zone   = "America/New_York"
+      description = "Daily manager digest (combined run: ADMIN and MANAGER; supervisors only via per-shift opt-in)"
+      retry       = local.scheduler_retry_3
+      env = {
+        dev  = { status = "create", name = "iqs-flow-daily-digest-dev" }
+        prod = { status = "import", name = "iqs-flow-daily-digest-prod" }
+      }
+    }
+
+    # Weekly digest. Live in dev only as the legacy iqs-weekly-report job (no
+    # retryConfig at all, already in dev state). NOT live in prod: flagged create.
+    weekly_digest = {
+      path        = "weekly-digest"
+      schedule    = "0 8 * * 1"
+      time_zone   = "America/New_York"
+      description = "Generate weekly inspection summary"
+      retry       = null
+      env = {
+        dev  = { status = "managed", name = "iqs-weekly-report" }
+        prod = { status = "create", name = "iqs-flow-weekly-digest-prod" }
+      }
+    }
+
+    feedback_digest = {
+      path        = "feedback-digest"
+      http_method = "GET"
+      schedule    = "0 8 * * 1"
+      time_zone   = "America/New_York"
+      env = {
+        prod = { status = "import", name = "iqs-flow-feedback-digest-prod" }
+      }
+    }
+
+    scheduled_inspections_roll = {
+      path        = "scheduled-inspections-roll"
+      http_method = "GET"
+      schedule    = "0 5 * * *"
+      time_zone   = "America/New_York"
+      env = {
+        prod = { status = "import", name = "iqs-flow-sched-insp-roll-prod" }
+      }
+    }
+
+    scheduled_reports = {
+      path        = "scheduled-reports"
+      http_method = "GET"
+      schedule    = "0 7 * * *"
+      time_zone   = "America/New_York"
+      env = {
+        prod = { status = "import", name = "iqs-flow-scheduled-reports-prod" }
+      }
+    }
+
+    # --- Defined in Terraform, NOT live in either env (flagged creates) ---
+    # Added by the infra-hardening pass from route names in cron.ts; never
+    # applied. Review before applying: each one starts a brand-new cron.
+
+    generate_daily_tasks = {
+      path             = "generate-daily-tasks"
+      schedule         = "0 0 * * *"
+      time_zone        = "America/New_York"
+      attempt_deadline = "300s"
+      description      = "Generate daily tasks for all tenants (midnight)"
+      retry            = local.scheduler_retry_3
+      env = {
+        dev  = { status = "create", name = "iqs-flow-generate-daily-tasks-dev" }
+        prod = { status = "create", name = "iqs-flow-generate-daily-tasks-prod" }
+      }
+    }
+
+    process_scheduled_tickets = {
+      path             = "process-scheduled-tickets"
+      schedule         = "*/15 * * * *"
+      time_zone        = "America/New_York"
+      attempt_deadline = "300s"
+      description      = "Process scheduled tickets into live tickets (every 15 min)"
+      retry            = local.scheduler_retry_3
+      env = {
+        dev  = { status = "create", name = "iqs-flow-process-scheduled-tickets-dev" }
+        prod = { status = "create", name = "iqs-flow-process-scheduled-tickets-prod" }
+      }
+    }
+
+    gate_turns = {
+      path             = "gate-turns"
+      schedule         = "*/15 * * * *"
+      time_zone        = "America/New_York"
+      attempt_deadline = "300s"
+      description      = "Compute gate-turn metrics for airport sites (every 15 min)"
+      retry            = local.scheduler_retry_3
+      env = {
+        dev  = { status = "create", name = "iqs-flow-gate-turns-dev" }
+        prod = { status = "create", name = "iqs-flow-gate-turns-prod" }
+      }
+    }
+
+    sync_flights = {
+      path             = "sync-flights"
+      schedule         = "0 * * * *"
+      time_zone        = "America/New_York"
+      attempt_deadline = "300s"
+      description      = "Sync today's flights for airports with linked sites (hourly)"
+      retry            = local.scheduler_retry_3
+      env = {
+        dev  = { status = "create", name = "iqs-flow-sync-flights-dev" }
+        prod = { status = "create", name = "iqs-flow-sync-flights-prod" }
+      }
     }
   }
 
-  retry_config {
-    retry_count = 3
+  # Jobs that exist in the current workspace, with defaults and per-env
+  # overrides applied.
+  scheduler_jobs = {
+    for key, spec in local.scheduler_job_specs : key => merge(
+      local.scheduler_job_defaults,
+      { for attr, value in spec : attr => value if attr != "env" },
+      try(spec.env[local.env_label], {}),
+    ) if contains(keys(spec.env), local.env_label)
   }
 }
 
-# Weekly inspection/activity digest emails, Mondays 08:00 ET.
-# Replaces weekly_report -> retired /api/reports/weekly route.
-resource "google_cloud_scheduler_job" "weekly_digest" {
-  name             = "iqs-flow-weekly-digest${local.env_suffix}"
-  description      = "Send weekly summary digest emails (Mondays)"
-  schedule         = "0 8 * * 1"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
+resource "google_cloud_scheduler_job" "cron" {
+  for_each = local.scheduler_jobs
+
+  name             = each.value.name
+  description      = each.value.description
+  schedule         = each.value.schedule
+  time_zone        = each.value.time_zone
+  attempt_deadline = each.value.attempt_deadline
 
   http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/weekly-digest"
+    http_method = each.value.http_method
+    uri         = "${local.cron_base_uri}/${each.value.path}${each.value.query}"
 
     oidc_token {
-      service_account_email = google_service_account.scheduler.email
+      service_account_email = local.cron_sa_email
+      audience              = "${local.cron_base_uri}/${each.value.path}"
     }
   }
 
-  retry_config {
-    retry_count = 3
+  dynamic "retry_config" {
+    for_each = each.value.retry == null ? [] : [each.value.retry]
+    content {
+      retry_count          = retry_config.value.retry_count
+      max_retry_duration   = retry_config.value.max_retry_duration
+      min_backoff_duration = retry_config.value.min_backoff_duration
+      max_backoff_duration = retry_config.value.max_backoff_duration
+      max_doublings        = retry_config.value.max_doublings
+    }
   }
 }
 
-# Daily activity digest emails, 07:00 ET.
-resource "google_cloud_scheduler_job" "daily_digest" {
-  name             = "iqs-flow-daily-digest${local.env_suffix}"
-  description      = "Send daily summary digest emails"
-  schedule         = "0 7 * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/daily-digest"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
+# Adopt live jobs that are not yet in this workspace's state (status "import").
+# import-block for_each needs Terraform >= 1.7 (see main.tf).
+import {
+  for_each = { for key, job in local.scheduler_jobs : key => job if job.status == "import" }
+  to       = google_cloud_scheduler_job.cron[each.key]
+  id       = "projects/${var.project_id}/locations/${var.region}/jobs/${each.value.name}"
 }
 
-# Generate per-tenant daily tasks at midnight ET.
-resource "google_cloud_scheduler_job" "generate_daily_tasks" {
-  name             = "iqs-flow-generate-daily-tasks${local.env_suffix}"
-  description      = "Generate daily tasks for all tenants (midnight)"
-  schedule         = "0 0 * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/generate-daily-tasks"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
+# Dev state already tracks these two under their old per-job addresses.
+moved {
+  from = google_cloud_scheduler_job.daily_cleanup
+  to   = google_cloud_scheduler_job.cron["daily_cleanup"]
 }
 
-# Materialize scheduled tickets into live tickets, every 15 minutes.
-resource "google_cloud_scheduler_job" "process_scheduled_tickets" {
-  name             = "iqs-flow-process-scheduled-tickets${local.env_suffix}"
-  description      = "Process scheduled tickets into live tickets (every 15 min)"
-  schedule         = "*/15 * * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/process-scheduled-tickets"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Compute gate-turn metrics for airport sites, every 15 minutes.
-resource "google_cloud_scheduler_job" "gate_turns" {
-  name             = "iqs-flow-gate-turns${local.env_suffix}"
-  description      = "Compute gate-turn metrics for airport sites (every 15 min)"
-  schedule         = "*/15 * * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/gate-turns"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Sync today's flights for airports with linked sites, hourly.
-resource "google_cloud_scheduler_job" "sync_flights" {
-  name             = "iqs-flow-sync-flights${local.env_suffix}"
-  description      = "Sync today's flights for airports with linked sites (hourly)"
-  schedule         = "0 * * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/sync-flights"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Generate work orders from preventive-maintenance plans, daily 02:00 ET.
-resource "google_cloud_scheduler_job" "process_pm_plans" {
-  name             = "iqs-flow-process-pm-plans${local.env_suffix}"
-  description      = "Process preventive-maintenance plans into work orders (daily)"
-  schedule         = "0 2 * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/process-pm-plans"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Recompute value-added-service (VAS) metrics, daily 04:00 ET.
-resource "google_cloud_scheduler_job" "compute_vas" {
-  name             = "iqs-flow-compute-vas${local.env_suffix}"
-  description      = "Recompute value-added-service metrics (daily)"
-  schedule         = "0 4 * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/compute-vas"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Timer-driven escalation sweep: unassigned Critical/High tickets, SLA-breached
-# tickets, overdue-uncompleted cleaning tasks, and overdue work orders. Routes
-# alerts to in-app + push + email so they no longer depend on someone touching
-# a record. Every 15 minutes.
-resource "google_cloud_scheduler_job" "escalation_sweep" {
-  name             = "iqs-flow-escalation-sweep${local.env_suffix}"
-  description      = "Escalate unassigned/overdue tickets, tasks, and work orders (every 15 min)"
-  schedule         = "*/15 * * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "300s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/escalation-sweep"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-}
-
-# Advance emergency notification ladders every minute.
-resource "google_cloud_scheduler_job" "emergency_ladder" {
-  name             = "iqs-flow-emergency-ladder${local.env_suffix}"
-  description      = "Advance emergency notification ladders (every minute)"
-  schedule         = "* * * * *"
-  time_zone        = "America/New_York"
-  attempt_deadline = "55s"
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cron_base_uri}/api/cron/emergency-ladder"
-
-    oidc_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
+moved {
+  from = google_cloud_scheduler_job.weekly_report
+  to   = google_cloud_scheduler_job.cron["weekly_digest"]
 }

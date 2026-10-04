@@ -30,7 +30,7 @@ production, not a plan.
 
 | File | Resources |
 |------|-----------|
-| `main.tf` | Provider (`google` + `google-beta` `~> 5.0`), GCS backend, `required_version >= 1.5` |
+| `main.tf` | Provider (`google` + `google-beta` `~> 5.0`), GCS backend, `required_version >= 1.7` (import blocks with `for_each`) |
 | `cloud-run.tf` | API (4000) + Web (3000) + Marketing (3000) Cloud Run services, the `run-migrations` job, and public-invoke IAM (API public-invoke is gated behind `var.api_allow_public_invoke`) |
 | `cloud-sql.tf` | PostgreSQL 15 instance + DB + user, plus inert Private-IP scaffolding (global address + service-networking connection, `count`-gated off by default) |
 | `secrets.tf` | Secret Manager secret shells (values managed via gcloud): `db-url`, `session-secret`, `api-url`, `smtp-pass`, `smtp-user`, `google-maps-api-key`, `aerodatabox-api-key` (all suffixed `-prod` in the prod workspace) |
@@ -42,7 +42,7 @@ production, not a plan.
 | `cloud-build.tf` | 3 tag-based triggers: api deploy, web deploy, shared publish (all `^v.*$`). Marketing/forms infra is provisioned by scripts, not a TF trigger |
 | `dns.tf` | Domain-mapping documentation only (managed via gcloud — v1/v2 API mismatch) |
 | `apis.tf` | All enabled GCP APIs (run, sqladmin, build, AR, secret manager, scheduler, tasks, gmail, maps, pubsub, error-reporting, …) |
-| `scheduler.tf` | 11 Cloud Scheduler cron jobs hitting `/api/cron/*`, all OIDC-authed as the scheduler SA |
+| `scheduler.tf` | Cloud Scheduler cron jobs hitting `/api/cron/*`, one `for_each` map (`local.scheduler_job_specs`) that mirrors the LIVE jobs per workspace (exact names, time zones, deadlines, retry). Live jobs OIDC-auth as `iqs-api@`. Per-env `status`: `managed` / `import` (import block adopts it) / `create` (TF-only, not live; flagged). Base URI comes from a `google_cloud_run_v2_service` data source, not the (prod-tainted) managed service |
 | `monitoring.tf` | Email notification channel, 2 uptime checks, 6 alert policies (5xx count, 5xx ratio, DB connections/CPU/disk, Pub/Sub dead-letter) |
 | `variables.tf` | Input variables (incl. Cloud SQL network + Cloud Run ingress hardening toggles, all defaulting to current behavior) |
 | `locals.tf` | Workspace-derived env suffix/label (`prod` workspace → `-prod`; `default` → dev, no suffix) |
@@ -116,7 +116,7 @@ Cloud Build deployment. Always dev-first, then prod. Don't poll Cloud Build (~5�
 | `iqs-api@` | Cloud Run API + `run-migrations` job | Cloud SQL Client, Secret Accessor, Vertex AI User (`aiplatform.user`), Cloud Translation User (`cloudtranslate.user`), Pub/Sub Publisher + Subscriber, GCS `objectAdmin` on the uploads bucket |
 | `iqs-web@` | Cloud Run Web **and Marketing** | Secret Accessor |
 | `iqs-build@` | Cloud Build | AR Writer, Run Developer (scoped to api/web/marketing services), Secret Accessor, SA User (scoped to api+web SAs), Log Writer |
-| `iqs-scheduler@` | Cloud Scheduler (OIDC identity on all 11 cron jobs) | Run Invoker |
+| `iqs-scheduler@` | Reserved for Cloud Scheduler; NO live cron job uses it today (all use `iqs-api@`) | Run Invoker |
 
 ## GCP Project Details
 

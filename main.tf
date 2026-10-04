@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.7" # import blocks with for_each (scheduler.tf)
 
   backend "gcs" {
     bucket = "iqs-flow-terraform-state"
