@@ -19,13 +19,19 @@
 #   * Dev job names mostly end in "-dev"; the two oldest dev jobs
 #     (iqs-flow-daily-cleanup, iqs-weekly-report) have no suffix.
 #
-# Each job's per-workspace entry carries a `status`:
+# A job has an entry for a workspace ONLY if it is live in that environment.
+# Never add an entry for a job that is not live: applying it would start a
+# brand-new cron. Create the job live first (gcloud), then add it here as
+# "import". Each per-workspace entry carries a `status`:
 #   "managed" - live and already in Terraform state for that workspace.
 #   "import"  - live but not yet in state; the import block below adopts it, so
 #               plan shows an import instead of a create. After the first apply
 #               that performs the import, flip it to "managed".
-#   "create"  - defined in Terraform but NOT live. Plan shows a create. These are
-#               flagged for review; applying them starts a new cron.
+#
+# Routes in cron.ts with NO live job in either env (deliberately absent here):
+# generate-daily-tasks, process-scheduled-tickets, gate-turns, sync-flights.
+# Also not live: daily-digest (combined) in dev, cleanup and weekly-digest in
+# prod.
 #
 # Base URI: read from the live Cloud Run service via a data source instead of
 # google_cloud_run_v2_service.api.uri. The managed prod API service is marked
@@ -203,7 +209,7 @@ locals {
     # --- Live in one env only ---
 
     # Nightly housekeeping. Live in dev only (legacy unsuffixed name, already in
-    # dev state). NOT live in prod: the prod entry is a flagged create.
+    # dev state). NOT live in prod, so no prod entry.
     daily_cleanup = {
       path             = "cleanup"
       schedule         = "0 3 * * *"
@@ -212,14 +218,12 @@ locals {
       description      = "Runs daily cleanup of old location events, audit logs, sessions, and notifications"
       retry            = local.scheduler_retry_3
       env = {
-        dev  = { status = "managed", name = "iqs-flow-daily-cleanup" }
-        prod = { status = "create", name = "iqs-flow-daily-cleanup-prod" }
+        dev = { status = "managed", name = "iqs-flow-daily-cleanup" }
       }
     }
 
     # Combined daily manager digest. Prod job was created by hand on 2026-10-03.
-    # No dev job is live; Terraform already defined one, so the dev entry is a
-    # flagged create.
+    # NOT live in dev, so no dev entry.
     daily_digest = {
       path        = "daily-digest"
       schedule    = "0 7 * * *"
@@ -227,13 +231,13 @@ locals {
       description = "Daily manager digest (combined run: ADMIN and MANAGER; supervisors only via per-shift opt-in)"
       retry       = local.scheduler_retry_3
       env = {
-        dev  = { status = "create", name = "iqs-flow-daily-digest-dev" }
         prod = { status = "import", name = "iqs-flow-daily-digest-prod" }
       }
     }
 
     # Weekly digest. Live in dev only as the legacy iqs-weekly-report job (no
-    # retryConfig at all, already in dev state). NOT live in prod: flagged create.
+    # retryConfig at all, already in dev state). NOT live in prod, so no prod
+    # entry.
     weekly_digest = {
       path        = "weekly-digest"
       schedule    = "0 8 * * 1"
@@ -241,8 +245,7 @@ locals {
       description = "Generate weekly inspection summary"
       retry       = null
       env = {
-        dev  = { status = "managed", name = "iqs-weekly-report" }
-        prod = { status = "create", name = "iqs-flow-weekly-digest-prod" }
+        dev = { status = "managed", name = "iqs-weekly-report" }
       }
     }
 
@@ -273,62 +276,6 @@ locals {
       time_zone   = "America/New_York"
       env = {
         prod = { status = "import", name = "iqs-flow-scheduled-reports-prod" }
-      }
-    }
-
-    # --- Defined in Terraform, NOT live in either env (flagged creates) ---
-    # Added by the infra-hardening pass from route names in cron.ts; never
-    # applied. Review before applying: each one starts a brand-new cron.
-
-    generate_daily_tasks = {
-      path             = "generate-daily-tasks"
-      schedule         = "0 0 * * *"
-      time_zone        = "America/New_York"
-      attempt_deadline = "300s"
-      description      = "Generate daily tasks for all tenants (midnight)"
-      retry            = local.scheduler_retry_3
-      env = {
-        dev  = { status = "create", name = "iqs-flow-generate-daily-tasks-dev" }
-        prod = { status = "create", name = "iqs-flow-generate-daily-tasks-prod" }
-      }
-    }
-
-    process_scheduled_tickets = {
-      path             = "process-scheduled-tickets"
-      schedule         = "*/15 * * * *"
-      time_zone        = "America/New_York"
-      attempt_deadline = "300s"
-      description      = "Process scheduled tickets into live tickets (every 15 min)"
-      retry            = local.scheduler_retry_3
-      env = {
-        dev  = { status = "create", name = "iqs-flow-process-scheduled-tickets-dev" }
-        prod = { status = "create", name = "iqs-flow-process-scheduled-tickets-prod" }
-      }
-    }
-
-    gate_turns = {
-      path             = "gate-turns"
-      schedule         = "*/15 * * * *"
-      time_zone        = "America/New_York"
-      attempt_deadline = "300s"
-      description      = "Compute gate-turn metrics for airport sites (every 15 min)"
-      retry            = local.scheduler_retry_3
-      env = {
-        dev  = { status = "create", name = "iqs-flow-gate-turns-dev" }
-        prod = { status = "create", name = "iqs-flow-gate-turns-prod" }
-      }
-    }
-
-    sync_flights = {
-      path             = "sync-flights"
-      schedule         = "0 * * * *"
-      time_zone        = "America/New_York"
-      attempt_deadline = "300s"
-      description      = "Sync today's flights for airports with linked sites (hourly)"
-      retry            = local.scheduler_retry_3
-      env = {
-        dev  = { status = "create", name = "iqs-flow-sync-flights-dev" }
-        prod = { status = "create", name = "iqs-flow-sync-flights-prod" }
       }
     }
   }

@@ -42,7 +42,7 @@ production, not a plan.
 | `cloud-build.tf` | 3 tag-based triggers: api deploy, web deploy, shared publish (all `^v.*$`). Marketing/forms infra is provisioned by scripts, not a TF trigger |
 | `dns.tf` | Domain-mapping documentation only (managed via gcloud — v1/v2 API mismatch) |
 | `apis.tf` | All enabled GCP APIs (run, sqladmin, build, AR, secret manager, scheduler, tasks, gmail, maps, pubsub, error-reporting, …) |
-| `scheduler.tf` | Cloud Scheduler cron jobs hitting `/api/cron/*`, one `for_each` map (`local.scheduler_job_specs`) that mirrors the LIVE jobs per workspace (exact names, time zones, deadlines, retry). Live jobs OIDC-auth as `iqs-api@`. Per-env `status`: `managed` / `import` (import block adopts it) / `create` (TF-only, not live; flagged). Base URI comes from a `google_cloud_run_v2_service` data source, not the (prod-tainted) managed service |
+| `scheduler.tf` | Cloud Scheduler cron jobs hitting `/api/cron/*`, one `for_each` map (`local.scheduler_job_specs`) that mirrors the LIVE jobs per workspace (exact names, time zones, deadlines, retry). Live jobs OIDC-auth as `iqs-api@`. A job has a per-env entry ONLY if it is live there; `status` is `managed` or `import` (import block adopts it). Base URI comes from a `google_cloud_run_v2_service` data source, not the (prod-tainted) managed service |
 | `monitoring.tf` | Email notification channel, 2 uptime checks, 6 alert policies (5xx count, 5xx ratio, DB connections/CPU/disk, Pub/Sub dead-letter) |
 | `variables.tf` | Input variables (incl. Cloud SQL network + Cloud Run ingress hardening toggles, all defaulting to current behavior) |
 | `locals.tf` | Workspace-derived env suffix/label (`prod` workspace → `-prod`; `default` → dev, no suffix) |
